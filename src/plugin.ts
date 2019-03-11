@@ -7,7 +7,7 @@ import { Commands } from './commands';
 let existingExtensions: Array<string>;
 
 export function collectJavaExtensions(extensions: vscode.Extension<any>[]): string[] {
-	existingExtensions = [];
+	const result = [];
 	if (extensions && extensions.length) {
 		for (let extension of extensions) {
 			let contributesSection = extension.packageJSON['contributes'];
@@ -15,32 +15,42 @@ export function collectJavaExtensions(extensions: vscode.Extension<any>[]): stri
 				let javaExtensions = contributesSection['javaExtensions'];
 				if (Array.isArray(javaExtensions) && javaExtensions.length) {
 					for (let javaExtensionPath of javaExtensions) {
-						existingExtensions.push(path.resolve(extension.extensionPath, javaExtensionPath));
+						result.push(path.resolve(extension.extensionPath, javaExtensionPath));
 					}
 				}
 			}
 		}
 	}
-	return existingExtensions;
+	// Make a copy of extensions:
+	existingExtensions = result.slice();
+	return result;
 }
 
 export function onExtensionChange(extensions: vscode.Extension<any>[]) {
 	if (!existingExtensions) {
 		return;
 	}
-	const oldExtensions = existingExtensions.slice();
+	const oldExtensions = new Set(existingExtensions.slice());
 	const newExtensions = collectJavaExtensions(extensions);
+
+	let added: boolean = false;
 	for (const newExtension of newExtensions) {
-		if (oldExtensions.indexOf(newExtension) < 0) {
-			let msg = 'Java Language Server has new extension installed or updated, please restart VS Code to enable it.';
-			let action = 'Restart Now';
-			let restartId = Commands.RELOAD_WINDOW;
-			vscode.window.showWarningMessage(msg, action).then((selection) => {
-				if (action === selection) {
-					vscode.commands.executeCommand(restartId);
-				}
-			});
+		if (oldExtensions.has(newExtension)) {
+			oldExtensions.delete(newExtension);
+		} else {
+			added = true;
 			break;
 		}
+	}
+
+	if (added || oldExtensions.size > 0) {
+		const msg = 'Java Language Server has extensions changed, reload required to update the change.';
+		const action = 'Restart Now';
+		const restartId = Commands.RELOAD_WINDOW;
+		vscode.window.showWarningMessage(msg, action).then((selection) => {
+			if (action === selection) {
+				vscode.commands.executeCommand(restartId);
+			}
+		});
 	}
 }
